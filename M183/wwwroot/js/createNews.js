@@ -12,12 +12,14 @@ function handleSaveNew() {
         authorId: getUserid(),
         isAdminNews: isAdmin()
     }
+    const user = JSON.parse(localStorage.getItem(userKey)); // Get user data
 
     fetch("/api/News/", {
         method: "POST",
         headers: {
             'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.token}` // Add Authorization header
         },
         body: JSON.stringify(data)
     })

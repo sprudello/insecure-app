@@ -32,11 +32,13 @@ function setEditMode(newsEntry) {
 }
 
 function handleDelete(newsEntry) {
+    const user = JSON.parse(localStorage.getItem(userKey)); // Get user data
     fetch("/api/News/" + newsEntry.id, {
         method: "DELETE",
         headers: {
             'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.token}` // Add Authorization header
         }
     })
         .then((response) => {
@@ -66,12 +68,14 @@ function handleSave(newsEntry) {
         authorId: newsEntry.authorId,
         isAdminNews: newsEntry.isAdminNews
     }
+    const user = JSON.parse(localStorage.getItem(userKey)); // Get user data
 
     fetch("/api/News/" + newsEntry.id, {
         method: "PATCH",
         headers: {
             'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.token}` // Add Authorization header
         },
         body: JSON.stringify(data)
     })

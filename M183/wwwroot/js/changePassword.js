@@ -9,11 +9,13 @@
         toastr.warning('Passwords are not equal', 'Warning');
     }
     else {
+        const user = JSON.parse(localStorage.getItem(userKey)); // Get user data
         fetch('/api/User/password-update', {
             method: 'PATCH',
             headers: {
                 'Accept': 'application/json',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${user.token}` // Add Authorization header
             },
             body: JSON.stringify({
                 UserId: getUserid(),

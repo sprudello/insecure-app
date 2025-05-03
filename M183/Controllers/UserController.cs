@@ -2,6 +2,7 @@
 using M183.Controllers.Helper;
 using M183.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization; 
 
 namespace M183.Controllers
 {
@@ -23,6 +24,7 @@ namespace M183.Controllers
         /// <response code="400">Bad request</response>
         /// <response code="404">User not found</response>
         [HttpPatch("password-update")]
+        [Authorize]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
