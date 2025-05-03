@@ -1,0 +1,36 @@
+# filepath: /home/sprudel/insecure-app/docker-compose.yml
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql_db
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "yourStrong(!)Password" # Choose a strong password
+      MSSQL_PID: "Developer" # Use Developer edition for free
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+  app:
+    container_name: insecure_app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"   # Map host port 8080 to container port 80 (http)
+      # - "8081:443"  # HTTPS no longer exposed by the container
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: "http://+" # Listen only on http
+      # ASPNETCORE_Kestrel__Certificates__Default__Password: "yourCertPassword" # Removed
+      # ASPNETCORE_Kestrel__Certificates__Default__Path: /https/aspnetapp.pfx # Removed
+      ConnectionStrings__SongContext: "Server=db;Database=M183InsecureApp;User ID=sa;Password=yourStrong(!)Password;TrustServerCertificate=True" # Use the db service name and SA credentials
+    depends_on:
+      - db
+    # Optional: Mount volume for HTTPS dev certificate if needed
+    # volumes:
+    #   - ~/.aspnet/https:/https:ro
+
+volumes:
+  mssql_data:
