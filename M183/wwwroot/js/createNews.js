@@ -36,12 +36,16 @@ function handleSaveNew() {
         });
 }
 
-function createNews(data) {
+function createNews() {
     /* Header. */
     var mainTitle = document.createElement("h1");
     mainTitle.innerText = "New entry";
 
     var main = document.getElementById("main");
+    // Ensure main is cleared before adding new content
+    if (!main) return; // Exit if main element not found
+    main.innerHTML = '';
+
     main.appendChild(mainTitle);
 
     /* New entry. */
@@ -51,43 +55,40 @@ function createNews(data) {
     var header = document.createElement("div");
     header.id = "header";
     header.classList.add("newsHeader");
-    if (isAdmin()) {
+    if (isAdmin()) { // Use isAdmin() from login.js
         header.classList.add("adminNews");
     }
-    header.innerText = "New header";
+    header.innerText = "New header"; // Default text for new entry
     header.contentEditable = true;
 
     var detail = document.createElement("div");
     detail.id = "detail";
     detail.classList.add("newsDetail");
-    detail.innerText = "New detail";
+    detail.innerText = "New detail"; // Default text for new entry
     detail.contentEditable = true;
 
     var btnSave = document.createElement("button");
     btnSave.id = "btnSave";
     btnSave.classList.add("btnSave");
     btnSave.innerText = "Save";
+    // Removed the IIFE and arg passing as it's not needed here
+    btnSave.addEventListener("click", handleSaveNew);
 
-    (function (arg) {
-        btnSave.addEventListener("click", function () {
-            handleSaveNew(arg);
-        });
-    })();
 
     var btnCancel = document.createElement("button");
     btnCancel.id = "btnCancel";
     btnCancel.classList.add("btnCancel");
     btnCancel.innerText = "Cancel";
+    // Removed the IIFE and arg passing as it's not needed here
+    btnCancel.addEventListener("click", handleCancelNew);
 
-    (function (arg) {
-        btnCancel.addEventListener("click", function () {
-            handleCancelNew(arg);
-        });
-    })();
 
     divEntry.appendChild(header);
     divEntry.appendChild(detail);
     divEntry.appendChild(btnSave);
     divEntry.appendChild(btnCancel);
     main.appendChild(divEntry);
+
+    // Optionally focus the header field
+    header.focus();
 }

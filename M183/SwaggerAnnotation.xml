@@ -6,11 +6,19 @@
     <members>
         <member name="M:M183.Controllers.LoginController.Login(M183.Controllers.Dto.LoginDto)">
             <summary>
-            Login a user using password and username
+            Login a user using password and username. May require 2FA step.
             </summary>
-            <response code="200">Login successfull</response>
+            <response code="200">Login successful OR 2FA required</response>
             <response code="400">Bad request</response>
-            <response code="401">Login failed</response>
+            <response code="401">Login failed (bad credentials)</response>
+        </member>
+        <member name="M:M183.Controllers.LoginController.VerifyTwoFactor(M183.Controllers.Dto.TwoFactorLoginDto)">
+            <summary>
+            Verifies the 2FA code provided after initial login.
+            </summary>
+            <response code="200">2FA successful, returns user info and JWT</response>
+            <response code="400">Bad request or invalid code</response>
+            <response code="404">User not found</response>
         </member>
         <member name="M:M183.Controllers.NewsController.GetAll">
             <summary>
@@ -48,6 +56,16 @@
             <response code="200">News deleted</response>
             <response code="404">News not found</response>
         </member>
+        <member name="M:M183.Controllers.TwoFactorAuthController.GetSetupInfo">
+            <summary>
+            Generates setup information for 2FA (secret and QR code URL).
+            </summary>
+        </member>
+        <member name="M:M183.Controllers.TwoFactorAuthController.VerifyAndEnable(M183.Controllers.Dto.TwoFactorVerifyDto)">
+            <summary>
+            Verifies the TOTP code and enables 2FA for the user.
+            </summary>
+        </member>
         <member name="M:M183.Controllers.UserController.PasswordUpdate(M183.Controllers.Dto.PasswordUpdateDto)">
             <summary>
             update password
@@ -78,6 +96,18 @@
             <inheritdoc />
         </member>
         <member name="M:M183.Migrations.InitialData.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:M183.Migrations.AddTwoFactorAuthToUser">
+            <inheritdoc />
+        </member>
+        <member name="M:M183.Migrations.AddTwoFactorAuthToUser.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:M183.Migrations.AddTwoFactorAuthToUser.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:M183.Migrations.AddTwoFactorAuthToUser.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
             <inheritdoc />
         </member>
     </members>

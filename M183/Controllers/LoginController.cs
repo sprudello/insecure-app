@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Google.Authenticator;
 
 namespace M183.Controllers
 {
@@ -25,16 +26,16 @@ namespace M183.Controllers
         }
 
         /// <summary>
-        /// Login a user using password and username
+        /// Login a user using password and username. May require 2FA step.
         /// </summary>
-        /// <response code="200">Login successfull</response>
+        /// <response code="200">Login successful OR 2FA required</response>
         /// <response code="400">Bad request</response>
-        /// <response code="401">Login failed</response>
+        /// <response code="401">Login failed (bad credentials)</response>
         [HttpPost]
-        [ProducesResponseType(200)]
+        [ProducesResponseType(typeof(LoginResponseDto), 200)] // Updated response type
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
-        public ActionResult<dynamic> Login(LoginDto request)
+        public async Task<ActionResult<LoginResponseDto>> Login(LoginDto request) // Changed return type
         {
             if (request == null || string.IsNullOrEmpty(request.Username) || string.IsNullOrEmpty(request.Password))
             {
@@ -43,27 +44,81 @@ namespace M183.Controllers
 
             string hashedPassword = MD5Helper.ComputeMD5Hash(request.Password);
 
-            // Use LINQ to prevent SQL injection
-            User? user = _context.Users
+            User? user = await _context.Users
                 .Where(u => u.Username == request.Username && u.Password == hashedPassword)
-                .FirstOrDefault();
+                .FirstOrDefaultAsync();
 
             if (user == null)
             {
-                return Unauthorized("login failed");
+                return Unauthorized("Invalid credentials.");
             }
 
-            // Generate JWT token
+            // Check if 2FA is enabled
+            if (user.IsTwoFactorEnabled)
+            {
+                // Return response indicating 2FA is required
+                return Ok(new LoginResponseDto { RequiresTwoFactor = true, UserId = user.Id });
+            }
+
+            // 2FA not enabled, generate JWT token immediately
             var token = GenerateJwtToken(user);
 
-            // Return user with token
-            return Ok(new
+            return Ok(new LoginResponseDto
             {
+                RequiresTwoFactor = false,
                 Id = user.Id,
                 Username = user.Username,
                 IsAdmin = user.IsAdmin,
                 Token = token
             });
+        }
+
+        /// <summary>
+        /// Verifies the 2FA code provided after initial login.
+        /// </summary>
+        /// <response code="200">2FA successful, returns user info and JWT</response>
+        /// <response code="400">Bad request or invalid code</response>
+        /// <response code="404">User not found</response>
+        [HttpPost("verify-2fa")]
+        [ProducesResponseType(typeof(LoginResponseDto), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(404)]
+        public async Task<ActionResult<LoginResponseDto>> VerifyTwoFactor(TwoFactorLoginDto request)
+        {
+            if (request == null || string.IsNullOrEmpty(request.Code) || request.UserId <= 0)
+            {
+                return BadRequest("User ID and code are required.");
+            }
+
+            var user = await _context.Users.FindAsync(request.UserId);
+            if (user == null)
+            {
+                return NotFound("User not found.");
+            }
+
+            if (!user.IsTwoFactorEnabled || string.IsNullOrEmpty(user.TwoFactorSecret))
+            {
+                return BadRequest("2FA is not enabled for this user.");
+            }
+
+            var tfa = new TwoFactorAuthenticator();
+            bool isValid = tfa.ValidateTwoFactorPIN(user.TwoFactorSecret, request.Code);
+
+            if (isValid)
+            {
+                // Code is valid, generate JWT token
+                var token = GenerateJwtToken(user);
+                return Ok(new LoginResponseDto
+                {
+                    RequiresTwoFactor = false, // Final step, so false
+                    Id = user.Id,
+                    Username = user.Username,
+                    IsAdmin = user.IsAdmin,
+                    Token = token
+                });
+            }
+
+            return BadRequest("Invalid 2FA code.");
         }
 
         private string GenerateJwtToken(User user)
