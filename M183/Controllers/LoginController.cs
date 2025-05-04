@@ -9,6 +9,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Google.Authenticator;
+using Microsoft.Extensions.Logging;
 
 namespace M183.Controllers
 {
@@ -18,11 +19,13 @@ namespace M183.Controllers
     {
         private readonly NewsAppContext _context;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<LoginController> _logger;
 
-        public LoginController(NewsAppContext context, IConfiguration configuration)
+        public LoginController(NewsAppContext context, IConfiguration configuration, ILogger<LoginController> logger)
         {
             _context = context;
             _configuration = configuration;
+            _logger = logger;
         }
 
         /// <summary>
@@ -39,7 +42,8 @@ namespace M183.Controllers
         {
             if (request == null || string.IsNullOrEmpty(request.Username) || string.IsNullOrEmpty(request.Password))
             {
-                return BadRequest();
+                _logger.LogWarning("Login Attempt: Bad request - missing username or password.");
+                return BadRequest("Username and password are required.");
             }
 
             string hashedPassword = MD5Helper.ComputeMD5Hash(request.Password);
@@ -50,18 +54,20 @@ namespace M183.Controllers
 
             if (user == null)
             {
+                _logger.LogWarning("Login Failure: User not found for username {Username}", request.Username);
                 return Unauthorized("Invalid credentials.");
             }
 
             // Check if 2FA is enabled
             if (user.IsTwoFactorEnabled)
             {
-                // Return response indicating 2FA is required
+                _logger.LogInformation("Login Step: 2FA required for User ID {UserId}", user.Id);
                 return Ok(new LoginResponseDto { RequiresTwoFactor = true, UserId = user.Id });
             }
 
             // 2FA not enabled, generate JWT token immediately
             var token = GenerateJwtToken(user);
+            _logger.LogInformation("Login Success: User ID {UserId} logged in successfully (no 2FA required)", user.Id);
 
             return Ok(new LoginResponseDto
             {
@@ -87,17 +93,20 @@ namespace M183.Controllers
         {
             if (request == null || string.IsNullOrEmpty(request.Code) || request.UserId <= 0)
             {
+                _logger.LogWarning("2FA Verify Failure: Bad request - missing User ID or Code. UserID Attempted: {UserId}", request?.UserId);
                 return BadRequest("User ID and code are required.");
             }
 
             var user = await _context.Users.FindAsync(request.UserId);
             if (user == null)
             {
+                _logger.LogWarning("2FA Verify Failure: User not found for ID {UserId}", request.UserId);
                 return NotFound("User not found.");
             }
 
             if (!user.IsTwoFactorEnabled || string.IsNullOrEmpty(user.TwoFactorSecret))
             {
+                _logger.LogWarning("2FA Verify Failure: 2FA not enabled or secret missing for User ID {UserId}", request.UserId);
                 return BadRequest("2FA is not enabled for this user.");
             }
 
@@ -108,6 +117,7 @@ namespace M183.Controllers
             {
                 // Code is valid, generate JWT token
                 var token = GenerateJwtToken(user);
+                _logger.LogInformation("2FA Verify Success: User ID {UserId} completed login", user.Id);
                 return Ok(new LoginResponseDto
                 {
                     RequiresTwoFactor = false, // Final step, so false
@@ -117,14 +127,24 @@ namespace M183.Controllers
                     Token = token
                 });
             }
-
-            return BadRequest("Invalid 2FA code.");
+            else
+            {
+                _logger.LogWarning("2FA Verify Failure: Invalid code provided for User ID {UserId}", request.UserId);
+                return BadRequest("Invalid 2FA code.");
+            }
         }
 
         private string GenerateJwtToken(User user)
         {
             var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes(_configuration["Jwt:Key"] ?? "defaultSecretKeyForJwtIfConfigurationNotProvided12345");
+            var jwtKey = _configuration["Jwt:Key"];
+            if (string.IsNullOrEmpty(jwtKey))
+            {
+                _logger.LogCritical("JWT Key is missing or empty in configuration. Cannot generate token.");
+                throw new InvalidOperationException("JWT Key is not configured properly.");
+            }
+            var key = Encoding.ASCII.GetBytes(jwtKey);
+
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(new[]

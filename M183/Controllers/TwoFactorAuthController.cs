@@ -7,6 +7,7 @@ using Google.Authenticator;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Google.Authenticator;
+using Microsoft.Extensions.Logging;
 
 namespace M183.Controllers
 {
@@ -17,14 +18,16 @@ namespace M183.Controllers
     {
         private readonly NewsAppContext _context;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<TwoFactorAuthController> _logger;
 
         // Use a fixed issuer name, potentially from configuration
         private const string Issuer = "InsecureApp";
 
-        public TwoFactorAuthController(NewsAppContext context, IConfiguration configuration)
+        public TwoFactorAuthController(NewsAppContext context, IConfiguration configuration, ILogger<TwoFactorAuthController> logger)
         {
             _context = context;
             _configuration = configuration;
+            _logger = logger;
         }
 
         /// <summary>
@@ -36,10 +39,22 @@ namespace M183.Controllers
         public async Task<ActionResult<TwoFactorSetupDto>> GetSetupInfo()
         {
             var userId = GetCurrentUserId();
-            if (userId == null) return Unauthorized();
+            if (userId == null) 
+            {
+                _logger.LogWarning("2FA Setup: Unauthorized access attempt (GetCurrentUserId returned null).");
+                return Unauthorized();
+            }
 
-            var user = await _context.Users.FindAsync(userId.Value);
-            if (user == null) return NotFound("User not found.");
+            User? user;
+            try
+            {
+                user = await _context.Users.FindAsync(userId.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "2FA Setup: Database error finding User ID {UserId}", userId.Value);
+                return StatusCode(500, "Database error occurred.");
+            }
 
             // Generate a new secret if one doesn't exist or if 2FA is not yet enabled
             if (string.IsNullOrEmpty(user.TwoFactorSecret) || !user.IsTwoFactorEnabled)
@@ -51,7 +66,8 @@ namespace M183.Controllers
             var tfa = new TwoFactorAuthenticator();
             // Use username in the QR code label for clarity in authenticator apps
             var setupInfo = tfa.GenerateSetupCode(Issuer, user.Username, user.TwoFactorSecret, false);
-
+            
+            _logger.LogInformation("2FA Setup: Provided setup info for User ID {UserId}", userId.Value);
             return Ok(new TwoFactorSetupDto
             {
                 ManualEntryKey = setupInfo.ManualEntryKey,
@@ -68,14 +84,30 @@ namespace M183.Controllers
         [ProducesResponseType(404)]
         public async Task<IActionResult> VerifyAndEnable([FromBody] TwoFactorVerifyDto request)
         {
-            if (request == null || string.IsNullOrEmpty(request.Code)) return BadRequest("Code is required.");
+            if (request == null || string.IsNullOrEmpty(request.Code))
+            {
+                 _logger.LogWarning("2FA Enable Verify: Bad request - Code missing in request body.");
+                return BadRequest("Code is required.");
+            }
 
             var userId = GetCurrentUserId();
-            if (userId == null) return Unauthorized();
-
+            if (userId == null)
+            {
+                
+                _logger.LogWarning("2FA Enable Verify: Unauthorized access attempt (GetCurrentUserId returned null).");
+                return Unauthorized();
+            }
             var user = await _context.Users.FindAsync(userId.Value);
-            if (user == null) return NotFound("User not found.");
-            if (string.IsNullOrEmpty(user.TwoFactorSecret)) return BadRequest("2FA setup not initiated.");
+            if (user == null)
+            {
+                 _logger.LogWarning("2FA Enable Verify: User not found for ID {UserId}", userId.Value);
+                return NotFound("User not found.");
+            }
+            if (string.IsNullOrEmpty(user.TwoFactorSecret))
+            {
+                 _logger.LogWarning("2FA Enable Verify: 2FA setup not initiated (secret missing) for User ID {UserId}", userId.Value);
+                return BadRequest("2FA setup not initiated or secret missing.");
+            }
 
             var tfa = new TwoFactorAuthenticator();
             bool isValid = tfa.ValidateTwoFactorPIN(user.TwoFactorSecret, request.Code);
@@ -83,11 +115,28 @@ namespace M183.Controllers
             if (isValid)
             {
                 user.IsTwoFactorEnabled = true;
-                await _context.SaveChangesAsync();
-                return Ok("Two-Factor Authentication enabled successfully.");
+                try
+                {
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation("2FA Enable Verify: Successfully verified and enabled for User ID {UserId}", userId.Value);
+                    return Ok("Two-Factor Authentication enabled successfully.");
+                }
+                catch (DbUpdateException ex)
+                {
+                    _logger.LogError(ex, "2FA Enable Verify: Database error enabling 2FA for User ID {UserId}", userId.Value);
+                    return StatusCode(500, "An error occurred while enabling 2FA.");
+                }
+                 catch (Exception ex)
+                {
+                    _logger.LogError(ex, "2FA Enable Verify: Unexpected error enabling 2FA for User ID {UserId}", userId.Value);
+                    return StatusCode(500, "An unexpected error occurred while enabling 2FA.");
+                }
             }
-
-            return BadRequest("Invalid code.");
+            else
+            {
+                _logger.LogWarning("2FA Enable Verify: Verification failed (Invalid Code) for User ID {UserId}", userId.Value);
+                return BadRequest("Invalid code.");
+            }
         }
 
         private int? GetCurrentUserId()
@@ -97,6 +146,7 @@ namespace M183.Controllers
             {
                 return userId;
             }
+            _logger.LogWarning("GetCurrentUserId: Could not parse User ID from claims. Claim value: {ClaimValue}", userIdClaim);
             return null;
         }
     }

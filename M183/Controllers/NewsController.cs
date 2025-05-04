@@ -4,6 +4,8 @@ using M183.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using System.Security.Claims;
 
 namespace M183.Controllers
 {
@@ -14,10 +16,12 @@ namespace M183.Controllers
     {
         private readonly TimeZoneInfo tzi = TimeZoneInfo.FindSystemTimeZoneById("Central Europe Standard Time");
         private readonly NewsAppContext _context;
+        private readonly ILogger<UserController> _logger;
 
-        public NewsController(NewsAppContext context)
+        public NewsController(NewsAppContext context, ILogger<UserController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         private News SetTimezone(News news)
@@ -34,11 +38,19 @@ namespace M183.Controllers
         [ProducesResponseType(200)]
         public ActionResult<List<News>> GetAll()
         {
-            return Ok(_context.News
-                .Include(n => n.Author)
-                .OrderByDescending(n => n.PostedDate)
-                .ToList()
-                .Select(SetTimezone));
+            try
+            {
+                return Ok(_context.News
+                    .Include(n => n.Author)
+                    .OrderByDescending(n => n.PostedDate)
+                    .ToList()
+                    .Select(SetTimezone));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving news");
+                return StatusCode(500, "Internal server error");
+            }
         }
 
         /// <summary>
@@ -52,15 +64,24 @@ namespace M183.Controllers
         [ProducesResponseType(404)]
         public ActionResult<News> GetById(int id)
         {
-            News? news = _context.News
-                .Include(n => n.Author)
-                .FirstOrDefault(n => n.Id == id);
-
-            if (news == null)
+            try
             {
-                return NotFound();
+                News? news = _context.News
+                    .Include(n => n.Author)
+                    .FirstOrDefault(n => n.Id == id);
+
+                if (news == null)
+                {
+                    _logger.LogWarning("Get News Failure: News item not found for ID {NewsId}", id);
+                    return NotFound();
+                }
+                return Ok(SetTimezone(news));
             }
-            return Ok(SetTimezone(news));
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving news with ID {NewsId}", id);
+                return StatusCode(500, "An error occurred while retrieving the news item.");
+            }
         }
 
         /// <summary>
@@ -70,25 +91,39 @@ namespace M183.Controllers
         [HttpPost]
         [ProducesResponseType(201)]
         [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(500)]
         public ActionResult Create(NewsDto request)
         {
             if (request == null)
             {
-                return BadRequest();
+                _logger.LogWarning("News Create Attempt: Bad request - request body was null.");
+                return BadRequest("Request body cannot be null.");
             }
 
             var newNews = new News();
 
-            newNews.Header = request.Header;
-            newNews.Detail = request.Detail;
-            newNews.AuthorId = request.AuthorId;
-            newNews.PostedDate = DateTime.UtcNow;
-            newNews.IsAdminNews = request.IsAdminNews;
+            try
+            {
+                _context.News.Add(newNews);
+                _context.SaveChanges(); // Save changes to generate the ID
 
-            _context.News.Add(newNews);
-            _context.SaveChanges();
+                // Log success with the generated ID
+                 _logger.LogInformation("News Created: News item {NewsId} created by User ID {UserId}", newNews.Id, request.AuthorId);
 
-            return CreatedAtAction(nameof(GetById), new { id = newNews.Id}, newNews);
+                // Return the created object, applying timezone for the response
+                return CreatedAtAction(nameof(GetById), new { id = newNews.Id}, SetTimezone(newNews));
+            }
+            catch (DbUpdateException ex)
+            {
+                 _logger.LogError(ex, "News Create Failure: Database error occurred for User ID {UserId}", request.AuthorId);
+                return StatusCode(500, "A database error occurred while creating the news item.");
+            }
+             catch (Exception ex)
+            {
+                 _logger.LogError(ex, "News Create Failure: Unexpected error occurred for User ID {UserId}", request.AuthorId);
+                return StatusCode(500, "An unexpected error occurred while creating the news item.");
+            }
         }
 
         /// <summary>
@@ -104,24 +139,40 @@ namespace M183.Controllers
         {
             if (request == null)
             {
-                return BadRequest();
+                _logger.LogWarning("News Create Attempt: Bad request - request body was null.");
+                return BadRequest("Request body cannot be null.");
             }
 
-            var news = _context.News.Find(id);
-            if (news == null)
+            try
             {
-                return NotFound(string.Format("News {0} not found", id));
+                var news = _context.News.Find(id);
+                if (news == null)
+                {
+                    _logger.LogWarning("News Update Failure: News item not found for ID {NewsId}, attempted by User ID {UserId}", id, request.AuthorId);
+                        return NotFound(string.Format("News {0} not found", id));
+                }
+
+                news.Header = request.Header;
+                news.Detail = request.Detail;
+                news.AuthorId = request.AuthorId;
+                news.IsAdminNews = request.IsAdminNews;
+
+                _context.News.Update(news);
+                _context.SaveChanges();
+
+                _logger.LogInformation("News Updated: News item {NewsId} updated by User ID {UserId}", id, request.AuthorId);
+                return Ok("News updated successfully.");
             }
-            
-            news.Header = request.Header;
-            news.Detail = request.Detail;
-            news.AuthorId = request.AuthorId;
-            news.IsAdminNews = request.IsAdminNews;
-
-            _context.News.Update(news);
-            _context.SaveChanges();
-
-            return Ok();
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "News Update Failure: Database error occurred for User ID {UserId}", request.AuthorId);
+                return StatusCode(500, "A database error occurred while updating the news item.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "News Update Failure: Unexpected error occurred for User ID {UserId}", request.AuthorId);
+                return StatusCode(500, "An unexpected error occurred while updating the news item.");
+            }
         }
 
         /// <summary>
@@ -135,16 +186,34 @@ namespace M183.Controllers
         [ProducesResponseType(404)]
         public ActionResult Delete(int id)
         {
-            var news = _context.News.Find(id);
-            if (news == null)
+            try
             {
-                return NotFound(string.Format("News {0} not found", id));
-            }
+                var news = _context.News.Find(id);
+                if (news == null)
+                {
+                    _logger.LogWarning("News Delete Failure: News item not found for ID {NewsId}", id);
+                    return NotFound(string.Format("News {0} not found", id));
+                }
 
-            _context.News.Remove(news);
-            _context.SaveChanges();
-            
-            return Ok();
+
+
+
+                _context.News.Remove(news);
+                _context.SaveChanges();
+
+                _logger.LogInformation("News Deleted: News item {NewsId} deleted", id);
+                return Ok("News deleted successfully.");
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "News Delete Failure: Database error occurred for News ID {NewsId}", id);
+                return StatusCode(500, "A database error occurred while deleting the news item.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "News Delete Failure: Unexpected error occurred for News ID {NewsId}", id);
+                return StatusCode(500, "An unexpected error occurred while deleting the news item.");
+            }
         }
     }
 }

@@ -8,6 +8,8 @@ using System.Security.Claims;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 
 namespace M183.Controllers
 {
@@ -16,6 +18,7 @@ namespace M183.Controllers
     public class UserController : ControllerBase
     {
         private readonly NewsAppContext _context;
+        private readonly ILogger<UserController> _logger;
         // Define rules constants/readonly fields
         private const int MinPasswordLength = 8; // Updated length
         private static readonly Regex UpperCaseRegex = new Regex(@"[A-Z]");
@@ -34,9 +37,10 @@ namespace M183.Controllers
             { 'I', 1 }, { 'V', 5 }, { 'X', 10 }, { 'L', 50 }, { 'C', 100 }, { 'D', 500 }, { 'M', 1000 }
         };
 
-        public UserController(NewsAppContext context)
+        public UserController(NewsAppContext context, ILogger<UserController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         
@@ -84,19 +88,32 @@ namespace M183.Controllers
         {
             // --- Basic Request Validation ---
             if (request == null || string.IsNullOrEmpty(request.CurrentPassword) || string.IsNullOrEmpty(request.NewPassword))
+            {
+                _logger.LogWarning("Password Update Attempt: Bad request - missing current or new password.");
                 return BadRequest("Current and new passwords are required.");
-
+            }
             // --- Authorization and User Retrieval ---
             var currentUserIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(currentUserIdClaim, out int currentUserId) || currentUserId != request.UserId)
+            {
+                _logger.LogWarning("Password Update Failure: Unauthorized attempt for User ID {TargetUserId} by User ID {ClaimedUserId}", request.UserId, currentUserIdClaim ?? "null");
                 return Unauthorized("User ID mismatch or invalid token.");
-
+            }
             var user = _context.Users.Find(request.UserId);
-            if (user == null) return NotFound($"User {request.UserId} not found");
+            if (user == null)
+            {
+                _logger.LogWarning("Password Update Failure: User not found for ID {UserId}", request.UserId);
+                return NotFound($"User {request.UserId} not found");
+            }
 
             // --- Current Password Verification ---
             string hashedCurrentPassword = MD5Helper.ComputeMD5Hash(request.CurrentPassword);
-            if (user.Password != hashedCurrentPassword) return BadRequest("Incorrect current password.");
+            if (user.Password != hashedCurrentPassword)
+            {
+                // Log incorrect current password
+                _logger.LogWarning("Password Update Failure: Incorrect current password for User ID {UserId}", request.UserId);
+                return BadRequest("Incorrect current password.");
+            }
 
             // --- New Password Rules Validation ---
             string newPassword = request.NewPassword;
@@ -155,6 +172,7 @@ namespace M183.Controllers
             // Return if any validation error occurred
             if (validationError != null)
             {
+                _logger.LogWarning("Password Update Failure: Rule violation for User ID {UserId}", request.UserId);
                 return BadRequest(validationError);
             }
             // --- End New Password Rules Validation ---
@@ -163,15 +181,33 @@ namespace M183.Controllers
             string hashedNewPassword = MD5Helper.ComputeMD5Hash(newPassword);
             if (user.Password == hashedNewPassword)
             {
+                // Log attempt to use the same password
+                _logger.LogWarning("Password Update Failure: New password same as current for User ID {UserId}", request.UserId);
                 return BadRequest("New password cannot be the same as the current password.");
             }
 
             // --- Update Password ---
             user.Password = hashedNewPassword;
-            _context.Users.Update(user);
-            _context.SaveChanges();
-
-            return Ok("Password updated successfully.");
+            try
+            {
+                _context.Users.Update(user);
+                _context.SaveChanges();
+                // Log successful update
+                _logger.LogInformation("Password Update Success: Password changed for User ID {UserId}", request.UserId);
+                return Ok("Password updated successfully.");
+            }
+            catch (DbUpdateException ex)
+            {
+                // Log database update error
+                _logger.LogError(ex, "Password Update Failure: Database error occurred while saving password for User ID {UserId}", request.UserId);
+                return StatusCode(500, "A database error occurred while updating the password.");
+            }
+            catch (Exception ex)
+            {
+                // Log any other unexpected errors during update
+                 _logger.LogError(ex, "Password Update Failure: Unexpected error occurred while saving password for User ID {UserId}", request.UserId);
+                return StatusCode(500, "An unexpected error occurred while updating the password.");
+            }
         }
     }
 }
