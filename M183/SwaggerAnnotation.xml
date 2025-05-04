@@ -71,7 +71,8 @@
             update password
             </summary>
             <response code="200">Password updated successfully</response>
-            <response code="400">Bad request</response>
+            <response code="400">Bad request (e.g., missing fields, incorrect current password, rule violation)</response>
+            <response code="401">Unauthorized (JWT invalid or user mismatch)</response>
             <response code="404">User not found</response>
         </member>
         <member name="T:M183.Migrations.CreateDatabase">
