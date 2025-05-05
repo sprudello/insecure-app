@@ -900,6 +900,9 @@ function onVerify2FA() {
 - **Showing 2FA Input (`showTwoFactorInput`):** This function hides the username and password input fields, makes the `divTwoFactor` visible, changes the text of the submit button to "Verify Code", and changes the form's `onsubmit` handler to call `onVerify2FA()` instead of `onLogin()`.
     
 - **Verifying 2FA Code (`onVerify2FA`):** This function is called when the user submits the 2FA code. It reads the code from the input field, retrieves the stored `pendingUserId`, and sends both to the `/api/Login/verify-2fa` backend endpoint. If successful, it receives the final user data/token, saves it using `saveUser()`, and redirects to the main page.
+
+
+![[Pasted image 20250505084025.png]]
 ---
 # HZ4
 #### Why should you require to ask for the current password?
@@ -1407,9 +1410,7 @@ namespace M183.Controllers
 *   **Roman Numeral Logic:** It uses `RomanSequenceRegex` to find all uppercase Roman numeral sequences. It checks if at least two matches are found. If so, it iterates through the matches, calculates the value of each using the `CalculateRomanValue` helper function, sums them up, and compares the total to `RequiredRomanSum`.
 *   **Error Handling:** If any rule check fails, a specific error message is assigned to the `validationError` variable. The code then immediately checks if `validationError` is not null. If it has a value (meaning a rule failed), a `BadRequest` (HTTP 400) response is returned containing the specific error message, preventing the password update. The password is only updated if all checks pass (`validationError` remains null).
 
-### [Demo Video](https://cloud.sprudello.ch/index.php/s/bQ6XZ7tmJ8kSHg8) (Click on the text if it doesn't work)
-![[convertedPassword.mp4]]
-
+### [Demo Video](https://cloud.sprudello.ch/index.php/s/bQ6XZ7tmJ8kSHg8) 
 
 # HZ4
 
@@ -1650,4 +1651,28 @@ namespace M183.Controllers
 
 ### HZ1
 
-In HZ1 I have learned about SQL injections, ransomware, and XSS attacks. 
+In HZ1 I have learned about SQL injections, ransomware, and XSS attacks. I also went into other attack techniques and I think that I have achieved what the LB wants from me. I can evaluate and analyse different attack types for different situations and can assess how critical different attacks are for the kind of software I am developing. 
+### HZ2
+
+In HZ2 I have learned about learned how to apply SQL injections and also have fixed it in the `insecure-app` . This was very easy and I think this is good enough for the LB, in reality I would never even think about doing those kind of operations with blank SQL requests and SQL interpolated. I would use an existing framework that does that for me and is certainly more secure than this. I have also implemented this in a later iteration of this project.
+### HZ3
+
+#### JWT
+I have understood the principle of JWT and can implement it into any web-application. Since I have done this several times in other projects, I could copy most of my existing code to this project with perfectly fine working code. In reality I wouldn't store any more information in the `localStorage` except for the JWT and website settings. For the real world I would actually do the same except for the 
+
+#### TOTP 2FA
+I have learned about how TOTP works and what the sequence is on how it is utilised and initialised. In the `ìnsecure-app` I have implemented it and it works perfectly fine. Sadly, I have no setup video or screenshot but in the demo video about changing the password you can see the 2FA being utilised two times. Eventually I will ad a screenshot from the setup-screen... I have done everything the LB wanted from me and I actually would do it the same way in the real world. 
+
+### HZ4
+I have learned different aspects of the human-factor and what to consider to reduce risks from the human-factor. And I have implemented the current-password request for changing the password and made some rules for new passwords. Yes they are mostly as a joke but they are effective and help to make the password safer. Also here I have implemented everything the LB wants from me. In the real-world I would never make such rules even if they are effective. Except for the first few rules.
+
+### HZ5
+I have learned about logging and how it utilised correctly, so that it's not overused and not wrongly used. I have also implemented logging and that's it. I would do the same in a real-world-scenario with the same informations, warnings, errors... The implemented logging is more than sufficient for this case and could also be too much already.  
+
+### Every HZ
+The evidence of fullfilling the HZ is in the code I have pasted and the explanation.
+
+
+# Sources
+
+I have used ChatGPT and Gemini 2.5 Pro to debug code and export the code formatted to save time. The explanations are written by myself and then also put into a LLM to improve language, formatting, and correctness. I have also used DuckDuckGo, Stackoverflow and the Documentation of the library for Google Authenticator for .NET
